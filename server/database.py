@@ -260,7 +260,7 @@ def get_stats() -> dict:
                     day_streaks.append(streak)
 
             last_7_days.append({
-                "date": day_start_ist.strftime("%d:%m:%Y"),
+                "date": day_start_ist.strftime("%d-%m-%Y"),
                 "session_count": len(day_sessions),
                 "total_distractions": day_distractions,
                 "longest_streak_seconds": max(day_streaks) if day_streaks else 0.0,
