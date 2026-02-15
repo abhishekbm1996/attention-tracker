@@ -36,6 +36,14 @@ class SessionSummaryResponse(BaseModel):
     longest_streak_seconds: float
 
 
+class SessionEndResponse(BaseModel):
+    """Session + summary when ending (avoids extra round trip)."""
+    id: int
+    started_at: str
+    ended_at: str
+    summary: SessionSummaryResponse
+
+
 class StatsResponse(BaseModel):
     today_sessions: int
     today_distractions_per_hour: float

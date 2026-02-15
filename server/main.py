@@ -20,6 +20,7 @@ from server.models import (
     ActiveSessionResponse,
     DayTrend,
     DistractionResponse,
+    SessionEndResponse,
     SessionResponse,
     SessionSummaryResponse,
     StatsResponse,
@@ -82,7 +83,7 @@ def start_session():
     return SessionResponse(id=session_id, started_at=started_at, ended_at=None)
 
 
-@app.patch("/api/sessions/{session_id}", response_model=SessionResponse, dependencies=[Depends(_verify_basic_auth)])
+@app.patch("/api/sessions/{session_id}", response_model=SessionEndResponse, dependencies=[Depends(_verify_basic_auth)])
 def end_session(session_id: int):
     session = get_session(session_id)
     if not session:
@@ -90,10 +91,14 @@ def end_session(session_id: int):
     if session.get("ended_at"):
         raise HTTPException(status_code=400, detail="Session already ended")
     ended_at = db_end_session(session_id)
-    return SessionResponse(
+    summary = get_session_summary(session_id)
+    if not summary:
+        raise HTTPException(status_code=500, detail="Failed to get summary")
+    return SessionEndResponse(
         id=session_id,
         started_at=session["started_at"],
         ended_at=ended_at,
+        summary=SessionSummaryResponse(**summary),
     )
 
 

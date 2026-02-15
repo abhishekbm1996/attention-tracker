@@ -159,8 +159,8 @@
     }
   });
 
-  // --- Active: distraction (optimistic: update UI first, sync in background)
-  $("#btn-distraction")?.addEventListener("click", async () => {
+  // --- Active: distraction (optimistic: update UI first, fire API without blocking)
+  $("#btn-distraction")?.addEventListener("click", () => {
     if (!currentSession) return;
     playClickBeep();
     const btn = document.getElementById("btn-distraction");
@@ -173,21 +173,22 @@
     const prevCount = distractionCount;
     distractionCount += 1;
     $("#distraction-count").textContent = String(distractionCount);
-    try {
-      let sessionId = currentSession.id;
-      if (sessionId === -1 && sessionPromise) {
-        const session = await sessionPromise;
-        sessionId = session.id;
-        currentSession = session;
-      }
-      if (sessionId !== -1) {
-        await api("POST", `/api/sessions/${sessionId}/distractions`);
-        saveSessionCache();
-      }
-    } catch (e) {
-      console.error(e);
-      distractionCount = prevCount;
-      $("#distraction-count").textContent = String(distractionCount);
+    const doPost = (sid) => {
+      api("POST", `/api/sessions/${sid}/distractions`)
+        .then(() => saveSessionCache())
+        .catch((e) => {
+          console.error(e);
+          distractionCount = prevCount;
+          $("#distraction-count").textContent = String(distractionCount);
+        });
+    };
+    if (currentSession.id !== -1) {
+      doPost(currentSession.id);
+    } else if (sessionPromise) {
+      sessionPromise.then((s) => {
+        currentSession = s;
+        doPost(s.id);
+      }).catch(() => {});
     }
   });
 
@@ -221,8 +222,8 @@
     $("#summary-streak").textContent = "—";
     showView("summary");
     try {
-      await api("PATCH", `/api/sessions/${sessionToEnd.id}`);
-      summaryData = await api("GET", `/api/sessions/${sessionToEnd.id}/summary`);
+      const data = await api("PATCH", `/api/sessions/${sessionToEnd.id}`);
+      summaryData = data.summary;
       $("#summary-duration").textContent = formatDuration(summaryData.duration_seconds);
       $("#summary-distractions").textContent = String(summaryData.distraction_count);
       $("#summary-streak").textContent = formatStreak(summaryData.longest_streak_seconds);
