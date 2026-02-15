@@ -1,4 +1,6 @@
 import os
+import sys
+import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Security
@@ -47,7 +49,12 @@ def _verify_basic_auth(credentials: HTTPBasicCredentials | None = Security(_sche
 
 @app.on_event("startup")
 def startup():
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print(f"STARTUP_FAILED: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
+        raise
 
 
 @app.get("/", dependencies=[Depends(_verify_basic_auth)])

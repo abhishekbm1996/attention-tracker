@@ -8,8 +8,12 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 _DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "attention_tracker.db"
 
-# Use Postgres when DATABASE_URL or DATABASE_POSTGRES_URL is set (Vercel + Supabase integration)
-_DB_URL = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_POSTGRES_URL")
+# Use Postgres when DATABASE_URL, DATABASE_POSTGRES_URL, or SUPABASE_DB_URL is set (Vercel + Supabase)
+_DB_URL = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("DATABASE_POSTGRES_URL")
+    or os.environ.get("SUPABASE_DB_URL")
+)
 USE_PG = bool(_DB_URL)
 
 
