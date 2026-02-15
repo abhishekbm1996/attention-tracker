@@ -25,7 +25,16 @@ def _get_db_path():
 def _pg_conn():
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    return psycopg2.connect(_DB_URL, cursor_factory=RealDictCursor)
+    conn = psycopg2.connect(
+        _DB_URL,
+        cursor_factory=RealDictCursor,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+    )
+    conn.autocommit = False
+    return conn
 
 
 def _sqlite_conn():
@@ -41,18 +50,15 @@ _cached_pg_conn = None
 def get_connection():
     if USE_PG:
         global _cached_pg_conn
-        # Check if cached connection is still usable (local check, no round trip)
         if _cached_pg_conn is not None and not _cached_pg_conn.closed:
+            return _cached_pg_conn
+        # Connection is dead or missing — clean up and reconnect
+        if _cached_pg_conn is not None:
             try:
-                # Reset any aborted transaction state without a DB round trip
-                _cached_pg_conn.rollback()
-                return _cached_pg_conn
+                _cached_pg_conn.close()
             except Exception:
-                try:
-                    _cached_pg_conn.close()
-                except Exception:
-                    pass
-                _cached_pg_conn = None
+                pass
+            _cached_pg_conn = None
         _cached_pg_conn = _pg_conn()
         return _cached_pg_conn
     return _sqlite_conn()
