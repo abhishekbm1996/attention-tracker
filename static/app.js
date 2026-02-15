@@ -6,6 +6,7 @@
   let distractionCount = 0;
   let timerInterval = null;
   let summaryData = null;
+  let sessionPromise = null; // Resolves to real session when Start API returns
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
@@ -64,16 +65,23 @@
   function playClickBeep() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 400;
-      osc.type = "sine";
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.08);
+      const play = () => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 400;
+        osc.type = "sine";
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.08);
+      };
+      if (ctx.state === "suspended") {
+        ctx.resume().then(play);
+      } else {
+        play();
+      }
     } catch (_) {}
   }
 
@@ -88,20 +96,26 @@
     return res.json ? res.json() : null;
   }
 
-  // --- Landing
+  // --- Landing (optimistic: show UI first, then sync with server)
   $("#btn-start")?.addEventListener("click", async () => {
+    const optimisticStartedAt = new Date().toISOString();
+    currentSession = { id: -1, started_at: optimisticStartedAt };
+    distractionCount = 0;
+    $("#distraction-count").textContent = "0";
+    showView("active");
+    sessionPromise = api("POST", "/api/sessions");
     try {
-      const session = await api("POST", "/api/sessions");
+      const session = await sessionPromise;
       currentSession = session;
-      distractionCount = 0;
-      $("#distraction-count").textContent = "0";
-      showView("active");
     } catch (e) {
       console.error(e);
+      currentSession = null;
+      sessionPromise = null;
+      showView("landing");
     }
   });
 
-  // --- Active: distraction
+  // --- Active: distraction (optimistic: update UI first, sync in background)
   $("#btn-distraction")?.addEventListener("click", async () => {
     if (!currentSession) return;
     playClickBeep();
@@ -112,31 +126,66 @@
       btn.classList.add("btn-distraction--pulse");
       setTimeout(() => btn.classList.remove("btn-distraction--pulse"), 350);
     }
+    const prevCount = distractionCount;
+    distractionCount += 1;
+    $("#distraction-count").textContent = String(distractionCount);
     try {
-      await api("POST", `/api/sessions/${currentSession.id}/distractions`);
-      distractionCount += 1;
-      $("#distraction-count").textContent = String(distractionCount);
+      let sessionId = currentSession.id;
+      if (sessionId === -1 && sessionPromise) {
+        const session = await sessionPromise;
+        sessionId = session.id;
+        currentSession = session;
+      }
+      if (sessionId !== -1) {
+        await api("POST", `/api/sessions/${sessionId}/distractions`);
+      }
     } catch (e) {
       console.error(e);
+      distractionCount = prevCount;
+      $("#distraction-count").textContent = String(distractionCount);
     }
   });
 
-  // --- Active: end session
+  // --- Active: end session (optimistic: show summary from local data first, sync in background)
   $("#btn-end")?.addEventListener("click", async () => {
     if (!currentSession) return;
     stopTimer();
+    let sessionToEnd = currentSession;
+    if (sessionToEnd.id === -1 && sessionPromise) {
+      try {
+        sessionToEnd = await sessionPromise;
+        currentSession = sessionToEnd;
+      } catch (_) {
+        return;
+      }
+    }
+    if (sessionToEnd.id === -1) return;
+    const localDistractionCount = distractionCount;
+    const localDuration = elapsedSeconds(sessionToEnd.started_at);
+    currentSession = null;
+    distractionCount = 0;
+    sessionPromise = null;
+    summaryData = {
+      duration_seconds: localDuration,
+      distraction_count: localDistractionCount,
+      longest_streak_seconds: 0,
+    };
+    $("#summary-duration").textContent = formatDuration(localDuration);
+    $("#summary-distractions").textContent = String(localDistractionCount);
+    $("#summary-streak").textContent = "—";
+    showView("summary");
     try {
-      await api("PATCH", `/api/sessions/${currentSession.id}`);
-      summaryData = await api("GET", `/api/sessions/${currentSession.id}/summary`);
-      currentSession = null;
-      distractionCount = 0;
-
+      await api("PATCH", `/api/sessions/${sessionToEnd.id}`);
+      summaryData = await api("GET", `/api/sessions/${sessionToEnd.id}/summary`);
       $("#summary-duration").textContent = formatDuration(summaryData.duration_seconds);
       $("#summary-distractions").textContent = String(summaryData.distraction_count);
       $("#summary-streak").textContent = formatStreak(summaryData.longest_streak_seconds);
-      showView("summary");
     } catch (e) {
       console.error(e);
+      currentSession = sessionToEnd;
+      distractionCount = localDistractionCount;
+      showView("active");
+      startTimer();
     }
   });
 
