@@ -5,11 +5,10 @@ A minimal, self-hosted web app to consciously track attention breaks during work
 ## Tech stack
 
 - **Backend:** Python, FastAPI, uvicorn
-- **Database:** SQLite (stdlib `sqlite3`)
+- **Database:** PostgreSQL (production/Vercel) or SQLite (local dev)
 - **Frontend:** Vanilla HTML, CSS, JavaScript
 - **PWA:** Service worker + manifest for “Add to Home Screen” on iOS Safari
-
-No auth — single-user MVP.
+- **Auth:** HTTP Basic Auth when `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` are set (optional, for public deployments)
 
 ## Setup
 
@@ -29,7 +28,19 @@ No auth — single-user MVP.
    pip install -r requirements.txt
    ```
 
-4. (Optional) Use a separate data directory for the SQLite DB: set `ATTENTION_TRACKER_DB` to a file path (e.g. `export ATTENTION_TRACKER_DB=/path/to/data/attention_tracker.db`). Default is `attention_tracker.db` in the project root.
+4. (Optional) Use a separate data directory for the SQLite DB: set `ATTENTION_TRACKER_DB` to a file path. Default is `attention_tracker.db` in the project root.
+
+## Deploy to Vercel
+
+1. Create a free Postgres database (e.g. [Neon](https://neon.tech), [Supabase](https://supabase.com), or [Vercel Postgres](https://vercel.com/storage/postgres)).
+2. [Connect your Git repo to Vercel](https://vercel.com/new) and deploy.
+3. In Vercel Project Settings → Environment Variables, add:
+   - `DATABASE_URL` — your Postgres connection string (e.g. `postgresql://user:pass@host/dbname`)
+   - `BASIC_AUTH_USER` — username for HTTP Basic Auth (required for public deployments)
+   - `BASIC_AUTH_PASSWORD` — password for HTTP Basic Auth
+4. Redeploy. The app will use Postgres and Basic Auth. Visitors will see a browser login prompt.
+
+**Local dev:** Without `DATABASE_URL`, the app uses SQLite. Without `BASIC_AUTH_*`, there is no auth prompt.
 
 ## Testing
 
@@ -68,8 +79,8 @@ attention-tracker/
 ├── .github/workflows/
 │   └── ci.yml        # Run tests on push/PR
 ├── server/
-│   ├── main.py       # FastAPI app, static mount, API routes
-│   ├── database.py   # SQLite schema and CRUD
+│   ├── main.py       # FastAPI app, static mount, API routes, Basic Auth
+│   ├── database.py   # SQLite (dev) or Postgres (prod) schema and CRUD
 │   └── models.py     # Pydantic request/response models
 ├── static/
 │   ├── index.html
@@ -81,6 +92,8 @@ attention-tracker/
 ├── tests/
 │   ├── conftest.py   # Pytest fixtures (client, isolated DB)
 │   └── test_api.py   # API contract and behavior tests
+├── index.py          # Vercel entrypoint
+├── vercel.json       # Vercel config
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── README.md
@@ -98,7 +111,7 @@ attention-tracker/
 
 ## Roadmap
 
-- Optional auth for multi-user or multi-device
+- OAuth (Google/GitHub) as an alternative to Basic Auth
 - Data export (e.g. CSV/JSON)
 - Sync across devices (e.g. optional cloud backup)
 
