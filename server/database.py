@@ -8,8 +8,9 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 _DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "attention_tracker.db"
 
-# Use Postgres when DATABASE_URL is set (Vercel), else SQLite (local dev)
-USE_PG = bool(os.environ.get("DATABASE_URL"))
+# Use Postgres when DATABASE_URL or DATABASE_POSTGRES_URL is set (Vercel + Supabase integration)
+_DB_URL = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_POSTGRES_URL")
+USE_PG = bool(_DB_URL)
 
 
 def _get_db_path():
@@ -19,7 +20,7 @@ def _get_db_path():
 def _pg_conn():
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    conn = psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=RealDictCursor)
+    conn = psycopg2.connect(_DB_URL, cursor_factory=RealDictCursor)
     # Disable prepared statements for Supabase transaction-mode pooler (serverless)
     conn.prepare_threshold = None
     return conn
