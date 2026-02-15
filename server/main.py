@@ -52,8 +52,12 @@ def startup():
     try:
         init_db()
     except Exception as e:
-        print(f"STARTUP_FAILED: {e}", file=sys.stderr, flush=True)
-        traceback.print_exc(file=sys.stderr)
+        err_type = type(e).__name__
+        err_msg = str(e)
+        print(f"STARTUP_FAILED_TYPE: {err_type}", file=sys.stderr, flush=True)
+        print(f"STARTUP_FAILED_MSG: {err_msg}", file=sys.stderr, flush=True)
+        for line in traceback.format_exc().splitlines():
+            print(line, file=sys.stderr, flush=True)
         raise
 
 
