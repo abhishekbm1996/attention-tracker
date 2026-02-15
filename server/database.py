@@ -34,10 +34,32 @@ def _sqlite_conn():
     return conn
 
 
+# Module-level cached PG connection — survives across warm Vercel invocations
+_cached_pg_conn = None
+
+
 def get_connection():
     if USE_PG:
-        return _pg_conn()
+        global _cached_pg_conn
+        if _cached_pg_conn is not None:
+            try:
+                _cached_pg_conn.cursor().execute("SELECT 1")
+                return _cached_pg_conn
+            except Exception:
+                try:
+                    _cached_pg_conn.close()
+                except Exception:
+                    pass
+                _cached_pg_conn = None
+        _cached_pg_conn = _pg_conn()
+        return _cached_pg_conn
     return _sqlite_conn()
+
+
+def _release(conn):
+    """Close SQLite connections; keep PG connections cached for reuse."""
+    if not USE_PG:
+        conn.close()
 
 
 def _pg_row_to_dict(row):
@@ -95,7 +117,7 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_distractions_session_id ON distractions(session_id)")
         conn.commit()
     finally:
-        conn.close()
+        _release(conn)
 
 
 def create_session() -> tuple[int, str]:
@@ -115,7 +137,7 @@ def create_session() -> tuple[int, str]:
         conn.commit()
         return cur.lastrowid, started_at
     finally:
-        conn.close()
+        _release(conn)
 
 
 ACTIVE_SESSION_MAX_AGE_HOURS = 24
@@ -162,7 +184,7 @@ def get_active_session() -> dict | None:
             "distraction_count": row_d["distraction_count"],
         }
     finally:
-        conn.close()
+        _release(conn)
 
 
 def validate_and_add_distraction(session_id: int) -> tuple[int, int, str]:
@@ -197,8 +219,12 @@ def validate_and_add_distraction(session_id: int) -> tuple[int, int, str]:
             )
             conn.commit()
             return cur.lastrowid, session_id, created_at
+    except ValueError:
+        if USE_PG:
+            conn.rollback()
+        raise
     finally:
-        conn.close()
+        _release(conn)
 
 
 def end_session_full(session_id: int) -> dict:
@@ -206,7 +232,6 @@ def end_session_full(session_id: int) -> dict:
     ended_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_connection()
     try:
-        # Validate and update in one connection
         if USE_PG:
             cur = conn.cursor()
             cur.execute("SELECT id, started_at, ended_at FROM sessions WHERE id = %s", (session_id,))
@@ -263,8 +288,12 @@ def end_session_full(session_id: int) -> dict:
                 "longest_streak_seconds": round(longest_streak, 2),
             },
         }
+    except ValueError:
+        if USE_PG:
+            conn.rollback()
+        raise
     finally:
-        conn.close()
+        _release(conn)
 
 
 def get_session_summary(session_id: int) -> dict | None:
@@ -310,7 +339,7 @@ def get_session_summary(session_id: int) -> dict | None:
             "longest_streak_seconds": round(longest_streak, 2),
         }
     finally:
-        conn.close()
+        _release(conn)
 
 
 def _parse_iso(s: str) -> datetime:
@@ -458,4 +487,4 @@ def get_stats() -> dict:
             "last_7_days": last_7_days,
         }
     finally:
-        conn.close()
+        _release(conn)
