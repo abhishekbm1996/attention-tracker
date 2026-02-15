@@ -25,8 +25,6 @@ def _pg_conn():
     import psycopg2
     from psycopg2.extras import RealDictCursor
     conn = psycopg2.connect(_DB_URL, cursor_factory=RealDictCursor)
-    # Disable prepared statements for Supabase transaction-mode pooler (serverless)
-    conn.prepare_threshold = None
     return conn
 
 
