@@ -1,5 +1,6 @@
 # Drass - do not commit
 attention_tracker.db
+.mcp.json
 __pycache__/
 
 # Byte-compiled / optimized / DLL files

@@ -3,6 +3,7 @@
 
   const VIEWS = ["landing", "active", "summary", "stats"];
   const CACHE_KEY = "drass_active_session";
+  const MAX_SESSION_DURATION_SECONDS = 3 * 60 * 60; // 3 hours
   const MAX_SESSION_AGE_HOURS = 24;
   let currentSession = null;
   let distractionCount = 0;
@@ -103,8 +104,13 @@
 
   function updateTimerDisplay() {
     if (!currentSession) return;
+    const elapsed = elapsedSeconds(currentSession.started_at);
+    if (elapsed >= MAX_SESSION_DURATION_SECONDS) {
+      autoEndSession();
+      return;
+    }
     const el = $("#timer-display");
-    if (el) el.textContent = formatDuration(elapsedSeconds(currentSession.started_at));
+    if (el) el.textContent = formatDuration(elapsed);
   }
 
   function startTimer() {
@@ -211,6 +217,46 @@
       }).catch(() => {});
     }
   });
+
+  // --- Auto-end session after max duration
+  async function autoEndSession() {
+    if (!currentSession) return;
+    stopTimer();
+    let sessionToEnd = currentSession;
+    if (sessionToEnd.id === -1 && sessionPromise) {
+      try {
+        sessionToEnd = await sessionPromise;
+        currentSession = sessionToEnd;
+      } catch (_) {
+        return;
+      }
+    }
+    if (sessionToEnd.id === -1) return;
+    const localDistractionCount = distractionCount;
+    const localDuration = MAX_SESSION_DURATION_SECONDS;
+    currentSession = null;
+    distractionCount = 0;
+    sessionPromise = null;
+    clearSessionCache();
+    summaryData = {
+      duration_seconds: localDuration,
+      distraction_count: localDistractionCount,
+      longest_streak_seconds: 0,
+    };
+    $("#summary-duration").textContent = formatDuration(localDuration);
+    $("#summary-distractions").textContent = String(localDistractionCount);
+    $("#summary-streak").textContent = "—";
+    showView("summary");
+    try {
+      const data = await api("PATCH", `/api/sessions/${sessionToEnd.id}`);
+      summaryData = data.summary;
+      $("#summary-duration").textContent = formatDuration(summaryData.duration_seconds);
+      $("#summary-distractions").textContent = String(summaryData.distraction_count);
+      $("#summary-streak").textContent = formatStreak(summaryData.longest_streak_seconds);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   // --- Active: end session (optimistic: show summary from local data first, sync in background)
   $("#btn-end")?.addEventListener("click", async () => {
